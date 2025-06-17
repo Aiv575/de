@@ -1,0 +1,66 @@
+composer create-project laravel/laravel –prefer-dist .
+php artisan make:controller ApiTesterController
+
+в него пишем 
+public function view(Request $request)
+    {
+        return view('welcome');
+    }
+
+    public function get()
+    {
+        $data = file_get_contents('http://localhost:8000/api/fullName');
+
+        if ($data)
+        {
+            $data = json_decode($data) -> value;
+        }
+
+        return redirect()->route('test')->with('value', $data);
+    }
+
+    public function check(Request $request)
+    {
+        $value = $request->input('value');
+
+        if(preg_match('/^[А-Яа-яЁё]+ [А-Яа-яЁё]+ [А-Яа-яЁё]+$/u', $value))
+        {
+            return redirect()->route('test')->with('value', $value)->with('message', 'ФИО корректно');
+        }
+        else
+        {
+            return redirect()->route('test')->with('value', $value)->with('message', 'ФИО содержит запрещенные символы');
+        }
+    }
+
+в resources/views/welcome.blade.php пишем 
+
+<p>
+    <form action="{{ route('test.get') }}">
+        <button type="submit">Получить данные</button>
+        <span>{{ session('value') }}</span>
+    </form>
+</p>
+<p>
+    <form method="POST" action="{{ route('test.check') }}">
+        @csrf
+        <input type="hidden" name="value" value="{{ session('value') }}">
+        <button type="submit">Отправить результат теста</button>
+        <span>{{ session('message') }}</span>
+    </form>
+</p>
+
+в routes/web.php пишем
+
+<?php
+
+use App\Http\Controllers\ApiTersterController;
+use Illuminate\Support\Facades\Route;
+
+Route::get('/', [ApiTesterController::class,'view'])->name('test');
+Route::get('/get',[ApiTesterController::class,'get'])->name('test.get');
+Route::post('/check',[ApiTesterController::class,'check'])->name('test.check');
+
+!!!!!!
+ЕСЛИ ДАЕТ АНГЛИЙСКИЕ БУКВЫ ТО ЗАМЕНЯЕМ В КОНТРОЛЛЕРЕ ГДЕ РУССКИЕ БУКВЫ в  public function check(Request $request) НА АНГЛИЙСКИЕ
+ if(preg_match('/^[A-Za-z]+ [A-Za-z]+$/u', $value))

@@ -1,0 +1,196 @@
+Создание проекта
+composer create-project --prefer-dist laravel/laravel .
+composer require laravel/breeze --dev
+npm install
+npm run dev
+php artisan serve
+
+Изменение миграции users
+$table->id();
+$table->string('name');
+$table->string('login')->unique();
+$table ->enum('role', ['admin', 'user']);
+$table->string('password');
+$table->rememberToken();
+$table->timestamps();
+
+Создание сидера
+php artisan make:seeder UserSeeder
+в public function run(): void вставить (database/seeders)
+
+DB::table('users')->insert([
+            [
+                'name' => 'Admin',
+                'login' => 'admin',
+                'password' => Hash::make('12345678'),
+                'role'=> 'admin'
+            ]
+        ]);
+
+в DatabaseSeeder.php тоже в public function run():
+
+$this ->call([
+        UserSeeder::class
+    ]);
+
+в терминале 
+php artisan migrate:refresh
+php artisan db:seed
+
+изменение модели User убираем email вставяем login и role 
+
+protected $fillable = [
+        'name',
+        'login',
+        'role',
+        'password',
+    ];
+
+убираем из protected function casts(): array email
+
+ниже добавляем функцию 
+
+public function isAdmin(): bool
+{
+     return $this->role === 'admin';
+}
+
+заходим в app/Http/Contorllers/Auth/RegistredUserController.php и делаем так
+
+public function create(): View
+    {
+        if (!auth()->check() || !auth()->user()->isAdmin()) {
+            abort(403, 'Только админ может создавать новых пользователей');
+        }
+
+        return view('auth.register');
+    }
+
+public function store(Request $request): RedirectResponse
+    {
+         if (!auth()->check() || !auth()->user()->isAdmin()) {
+            abort(403, 'Только админ может создавать новых пользователей');
+        }
+
+        $request->validate([
+            'name' => ['required', 'string', 'max:255'],
+            'login' => ['required', 'string', 'max:255', 'unique:'.User::class],
+            'role' => ['required'],
+            'password' => ['required', 'confirmed', Rules\Password::defaults()],
+        ]);
+
+        $user = User::create([
+            'name' => $request->name,
+            'login' => $request->login,
+            'role' => $request->role,
+            'password' => Hash::make($request->password),
+        ]);
+
+        event(new Registered($user));
+
+        return redirect(route('dashboard', absolute: false));
+    }
+
+заходим в app/Http/Requests/Auth/LoginRequest.php меняем
+
+ public function rules(): array
+    {
+        return [
+            'login' => ['required', 'string', ],
+            'password' => ['required', 'string'],
+        ];
+    }
+
+public function authenticate(): void
+    {
+        $this->ensureIsNotRateLimited();
+
+        if (! Auth::attempt($this->only('login', 'password'), $this->boolean('remember'))) {
+            RateLimiter::hit($this->throttleKey());
+
+            throw ValidationException::withMessages([
+                'login' => trans('auth.failed'),
+            ]);
+        }
+
+        RateLimiter::clear($this->throttleKey());
+    }
+
+public function ensureIsNotRateLimited(): void
+    {
+        if (! RateLimiter::tooManyAttempts($this->throttleKey(), 5)) {
+            return;
+        }
+
+        event(new Lockout($this));
+
+        $seconds = RateLimiter::availableIn($this->throttleKey());
+
+        throw ValidationException::withMessages([
+            'login' => trans('auth.throttle', [
+                'seconds' => $seconds,
+                'minutes' => ceil($seconds / 60),
+            ]),
+        ]);
+    }
+
+public function throttleKey(): string
+    {
+        return Str::transliterate(Str::lower($this->string('login')).'|'.$this->ip());
+    }
+
+заходим в resources/views/auth/login.blade.php меняем email на login
+
+<div>
+            <x-input-label for="login" :value="__('Login')" />
+            <x-text-input id="login" class="block mt-1 w-full" type="string" name="login" :value="old('login')" required autofocus autocomplete="username" />
+            <x-input-error :messages="$errors->get('login')" class="mt-2" />
+        </div>
+
+заходим в resources/views/auth/register.blade.php меняем email на login
+
+<div class="mt-4">
+            <x-input-label for="login" :value="__('Login')" />
+            <x-text-input id="login" class="block mt-1 w-full" type="login" name="login" :value="old('login')" required autocomplete="username" />
+            <x-input-error :messages="$errors->get('login')" class="mt-2" />
+        </div>
+
+добавляем роли
+
+<div class="mt-4">
+            <x-input-label for="role" :value="__('Role')" />
+            <select id="role" name="role" required
+                    class="block mt-1 w-full border-gray-300 focus:border-indigo-500 focus:ring-indigo-500 rounded-md shadow-sm">
+                <option value="user">User</option>
+                <option value="admin">Admin</option>
+            </select>
+            <x-input-error :messages="$errors->get('role')" class="mt-2" />
+        </div>
+
+заходим в resources/views/layouts/navigation.blade.php добавляем после Dashboard
+
+@if(auth()->user()->isAdmin())
+
+                <div class="hidden space-x-8 sm:-my-px sm:ms-10 sm:flex">
+                    <x-nav-link :href="route('register')" :active="request()->routeIs('register')">
+                        {{ __('Add users') }}
+                    </x-nav-link>
+                </div>
+                @endif
+
+заходим в welcome.blade.php удаляем регистрацию(НЕ БОЙСЯ ВСЕ НОРМ ТАК НАДО)
+можешь тут поменять английские слова типо добро пожаловать написать или удалить
+
+далее заходим в routes/auth вырезаем всё с регистрацией, заходим в web.php и вставляем после profile
+
+Route::middleware('auth')->group(function () {
+    Route::get('/profile', [ProfileController::class, 'edit'])->name('profile.edit');
+    Route::patch('/profile', [ProfileController::class, 'update'])->name('profile.update');
+    Route::delete('/profile', [ProfileController::class, 'destroy'])->name('profile.destroy');
+    Route::get('register', [RegisteredUserController::class, 'create'])
+        ->name('register');
+
+    Route::post('register', [RegisteredUserController::class, 'store']);
+});
+
+так должно получиться в web.php
