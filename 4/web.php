@@ -1,6 +1,6 @@
 <?php
 
-use App\Http\Controllers\ApiTersterController;
+use App\Http\Controllers\ApiTesterController;
 use Illuminate\Support\Facades\Route;
 
 Route::get('/', [ApiTesterController::class,'view'])->name('test');
